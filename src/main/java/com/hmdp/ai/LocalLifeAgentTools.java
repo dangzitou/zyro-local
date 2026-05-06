@@ -216,6 +216,43 @@ public class LocalLifeAgentTools {
         return result;
     }
 
+    @Tool(name = "recommend_nearby_shops", description = "Recommend nearby shops with an explicit max distance radius chosen by the model.")
+    public List<ShopRecommendationDTO> recommendNearbyShops(
+            @ToolParam(required = false, description = "Keyword such as 火锅, 咖啡, 烧烤") String keyword,
+            @ToolParam(required = false, description = "Shop type id if available") Integer typeId,
+            @ToolParam(required = false, description = "Maximum budget in RMB") Long maxBudget,
+            @ToolParam(required = false, description = "Explicit city mentioned by user") String city,
+            @ToolParam(required = false, description = "Explicit商圈/地标/区域 hint mentioned by user") String locationHint,
+            @ToolParam(description = "Longitude of the user") Double x,
+            @ToolParam(description = "Latitude of the user") Double y,
+            @ToolParam(required = false, description = "Maximum nearby radius in meters, such as 500, 2000, 5000, 10000") Double maxDistanceMeters,
+            @ToolParam(required = false, description = "Whether only shops with coupons are acceptable") Boolean couponOnly,
+            @ToolParam(required = false, description = "Number of recommendation items to return, default 5") Integer limit) {
+        ShopRecommendationQuery query = new ShopRecommendationQuery();
+        query.setKeyword(keyword);
+        query.setTypeId(typeId);
+        query.setMaxBudget(maxBudget);
+        query.setCity(city);
+        query.setLocationHint(locationHint);
+        query.setX(x);
+        query.setY(y);
+        query.setMaxDistanceMeters(maxDistanceMeters);
+        query.setCouponOnly(couponOnly);
+        query.setLimit(limit);
+        List<ShopRecommendationDTO> result = shopRecommendationService.recommendShops(query);
+        traceContext.record("recommend_nearby_shops(keyword=" + safe(keyword)
+                + ", typeId=" + safe(typeId)
+                + ", budget=" + safe(maxBudget)
+                + ", city=" + safe(city)
+                + ", locationHint=" + safe(locationHint)
+                + ", x=" + safe(x)
+                + ", y=" + safe(y)
+                + ", maxDistanceMeters=" + safe(maxDistanceMeters)
+                + ", couponOnly=" + safe(couponOnly)
+                + ", limit=" + safe(limit) + ") -> " + result.size() + " recommendation(s)");
+        return result;
+    }
+
     public List<ShopRecommendationDTO> recommendShops(ShopRecommendationQuery query) {
         List<ShopRecommendationDTO> result = shopRecommendationService.recommendShops(query);
         traceContext.record("recommend_shops(keyword=" + safe(query.getKeyword())
@@ -223,6 +260,7 @@ public class LocalLifeAgentTools {
                 + ", budget=" + safe(query.getMaxBudget())
                 + ", city=" + safe(query.getCity())
                 + ", locationHint=" + safe(query.getLocationHint())
+                + ", maxDistanceMeters=" + safe(query.getMaxDistanceMeters())
                 + ", subcategory=" + safe(query.getSubcategory())
                 + ", excludedCategories=" + safe(query.getExcludedCategories())
                 + ", negativePreferences=" + safe(query.getNegativePreferences())

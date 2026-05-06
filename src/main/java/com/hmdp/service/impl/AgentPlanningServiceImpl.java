@@ -73,15 +73,17 @@ public class AgentPlanningServiceImpl implements IAgentPlanningService {
             17. negativePreferences should contain explicitly rejected preferences, such as 太辣 / 太贵
             18. If the user says "不要火锅，想吃清淡的", then category/subcategory should represent the wanted direction, and 火锅 should go into excludedCategories instead of category.
             19. preferredTools can only contain:
-               - get_current_user_location
-               - search_shops
-               - get_shop_detail
-               - get_shop_coupons
-               - get_hot_blogs
-               - recommend_shops
+                - get_current_user_location
+                - search_shops
+                - get_shop_detail
+                - get_shop_coupons
+                - get_hot_blogs
+                - recommend_shops
+                - recommend_nearby_shops
             20. Recommendation-style local-life questions should prefer recommend_shops.
-            21. Dynamic business facts such as shop details, prices, coupons, ratings and opening hours should prefer tools.
-            22. Output only the structured plan object.
+            21. When the user clearly asks for nearby results and coordinates will matter, prefer recommend_nearby_shops so the model can choose a distance radius itself.
+            22. Dynamic business facts such as shop details, prices, coupons, ratings and opening hours should prefer tools.
+            23. Output only the structured plan object.
             """;
 
     private static final Pattern BUDGET_PATTERN =
@@ -409,6 +411,9 @@ public class AgentPlanningServiceImpl implements IAgentPlanningService {
             if (useCurrentUserLocationTool) {
                 tools.add("get_current_user_location");
             }
+            if (Boolean.TRUE.equals(plan.getNearby())) {
+                tools.add("recommend_nearby_shops");
+            }
             tools.add("recommend_shops");
             if (Boolean.TRUE.equals(plan.getUseKnowledge())) {
                 tools.add("search_shops");
@@ -454,6 +459,9 @@ public class AgentPlanningServiceImpl implements IAgentPlanningService {
         List<String> tools = plan.getPreferredTools() == null ? new ArrayList<String>() : new ArrayList<String>(plan.getPreferredTools());
         if (tools.isEmpty()) {
             tools.addAll(heuristic.getPreferredTools());
+        }
+        if ("recommendation".equals(plan.getIntent()) && Boolean.TRUE.equals(plan.getNearby()) && !tools.contains("recommend_nearby_shops")) {
+            tools.add(0, "recommend_nearby_shops");
         }
         if ("recommendation".equals(plan.getIntent()) && !tools.contains("recommend_shops")) {
             tools.add(0, "recommend_shops");

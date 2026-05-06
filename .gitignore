@@ -35,5 +35,6 @@ build/
 ### Runtime Noise ###
 dump.rdb
 hs_err_pid*.log
+*.log
 __pycache__/
 *.pyc

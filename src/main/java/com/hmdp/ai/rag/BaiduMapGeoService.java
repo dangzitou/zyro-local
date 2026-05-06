@@ -95,6 +95,45 @@ public class BaiduMapGeoService {
         return null;
     }
 
+    public ReverseGeoPoint reverseGeocode(Double lng, Double lat) {
+        if (!Boolean.TRUE.equals(aiProperties.getBaiduMap().getEnabled())
+                || !StringUtils.hasText(aiProperties.getBaiduMap().getAk())
+                || lng == null || lat == null) {
+            log.info("baidu_geo reverse_disabled_or_missing lng={}, lat={}", lng, lat);
+            return null;
+        }
+        RestClient restClient = RestClient.builder()
+                .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
+                .defaultHeader(HttpHeaders.USER_AGENT, "Mozilla/5.0")
+                .build();
+        try {
+            String url = aiProperties.getBaiduMap().getReverseGeocodingUrl()
+                    + "?ak=" + URLEncoder.encode(aiProperties.getBaiduMap().getAk(), StandardCharsets.UTF_8)
+                    + "&extensions_poi=1&entire_poi=1&sort_strategy=distance&output=json"
+                    + "&coordtype=wgs84ll&location=" + lat + "," + lng;
+            String response = restClient.get().uri(URI.create(url)).retrieve().body(String.class);
+            JsonNode root = objectMapper.readTree(response);
+            if (root.path("status").asInt(-1) != 0) {
+                log.warn("baidu_geo reverse_status_not_ok lng={}, lat={}, status={}, body={}",
+                        lng, lat, root.path("status").asInt(-1), response);
+                return null;
+            }
+            JsonNode result = root.path("result");
+            String formattedAddress = result.path("formatted_address").asText(null);
+            JsonNode addressComponent = result.path("addressComponent");
+            String city = blankToNull(addressComponent.path("city").asText(null));
+            String district = blankToNull(addressComponent.path("district").asText(null));
+            String street = blankToNull(addressComponent.path("street").asText(null));
+            String business = blankToNull(result.path("business").asText(null));
+            log.info("baidu_geo reverse_hit lng={}, lat={}, city={}, district={}, business={}, formattedAddress={}",
+                    lng, lat, city, district, business, formattedAddress);
+            return new ReverseGeoPoint(lng, lat, city, district, street, business, formattedAddress);
+        } catch (Exception e) {
+            log.warn("baidu_geo reverse_failed lng={}, lat={}", lng, lat, e);
+            return null;
+        }
+    }
+
     private Set<String> buildCandidateAddresses(String city, String locationHint) {
         String base = StringUtils.hasText(city) ? city + locationHint : locationHint;
         Set<String> addresses = new LinkedHashSet<String>();
@@ -194,6 +233,15 @@ public class BaiduMapGeoService {
     public record GeoPoint(Double lng, Double lat, String resolvedAddress) {
     }
 
+    public record ReverseGeoPoint(Double lng,
+                                  Double lat,
+                                  String city,
+                                  String district,
+                                  String street,
+                                  String business,
+                                  String formattedAddress) {
+    }
+
     private record GeoCandidate(String address,
                                 Double lng,
                                 Double lat,
@@ -201,5 +249,9 @@ public class BaiduMapGeoService {
                                 Integer confidence,
                                 String level,
                                 Double score) {
+    }
+
+    private String blankToNull(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 }

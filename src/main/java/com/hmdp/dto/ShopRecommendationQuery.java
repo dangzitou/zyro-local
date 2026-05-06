@@ -14,6 +14,7 @@ public class ShopRecommendationQuery {
     private String locationHint;
     private Double x;
     private Double y;
+    private Double maxDistanceMeters;
     private Boolean couponOnly;
     private Integer limit;
     private String subcategory;

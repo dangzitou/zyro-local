@@ -53,7 +53,6 @@ public class ShopRecommendationServiceImpl implements IShopRecommendationService
     private static final int MAX_ENRICHMENT_CANDIDATES = 24;
     private static final double GEO_SEARCH_RADIUS_METERS = 8000D;
     private static final double NEARBY_DISTANCE_LIMIT_METERS = 50000D;
-    private static final double LOCATION_HARD_FILTER_METERS = 8000D;
 
     @Resource
     private IShopService shopService;
@@ -123,6 +122,9 @@ public class ShopRecommendationServiceImpl implements IShopRecommendationService
         final Double finalY = effectiveY;
         int resultLimit = query.getLimit() == null ? 5 : Math.max(1, Math.min(query.getLimit(), 10));
         boolean useLocation = finalX != null && finalY != null;
+        double distanceLimitMeters = query.getMaxDistanceMeters() == null || query.getMaxDistanceMeters() <= 0D
+                ? NEARBY_DISTANCE_LIMIT_METERS
+                : Math.min(query.getMaxDistanceMeters(), NEARBY_DISTANCE_LIMIT_METERS);
         String normalizedKeyword = normalizeKeyword(buildEffectiveKeyword(query));
         Set<Long> categoryMatchedShopIds = loadMatchedSubCategoryShopIds(normalizedKeyword, query.getTypeId());
         Set<Long> excludedShopIds = loadExcludedCategoryShopIds(query.getExcludedCategories(), query.getTypeId());
@@ -136,10 +138,10 @@ public class ShopRecommendationServiceImpl implements IShopRecommendationService
             return Collections.emptyList();
         }
         if (useLocation) {
-            candidates = applyLocationHardFilter(candidates, finalX, finalY);
-            log.info("recommendation_candidates nearby_filtered={} radiusMeters={}", candidates.size(), LOCATION_HARD_FILTER_METERS);
+            candidates = prioritizeCandidatesByDistance(candidates, finalX, finalY, distanceLimitMeters);
+            log.info("recommendation_candidates distance_prioritized={} radiusMeters={}", candidates.size(), distanceLimitMeters);
         }
-        if (candidates.isEmpty()) {
+        if (candidates == null || candidates.isEmpty()) {
             log.info("recommendation_candidates total=0 after_nearby_filter");
             return Collections.emptyList();
         }
@@ -169,7 +171,7 @@ public class ShopRecommendationServiceImpl implements IShopRecommendationService
             }
             List<Blog> blogs = loadShopBlogs(shop.getId());
             ShopRecommendationDTO dto = buildRecommendation(shop, vouchers, blogs, finalX, finalY, normalizedKeyword);
-            if (useLocation && dto.getDistanceMeters() != null && dto.getDistanceMeters() > NEARBY_DISTANCE_LIMIT_METERS) {
+            if (useLocation && dto.getDistanceMeters() != null && dto.getDistanceMeters() > distanceLimitMeters) {
                 log.debug("recommendation_drop shopId={} reason=distance_over_limit distanceMeters={}",
                         shop.getId(), dto.getDistanceMeters());
                 continue;
@@ -215,15 +217,15 @@ public class ShopRecommendationServiceImpl implements IShopRecommendationService
             mergeCandidates(merged, nearbyCandidates);
         }
         int targetSize = useLocation ? MAX_CANDIDATES_WITH_LOCATION : MAX_CANDIDATES;
+        if (useLocation) {
+            List<Shop> coordinateCandidates = loadCoordinateDbCandidates(typeId, maxBudget, x, y, targetSize);
+            log.info("recommendation_recall coordinate_db={}", coordinateCandidates.size());
+            mergeCandidates(merged, coordinateCandidates);
+        }
         if (merged.size() < targetSize && StrUtil.isNotBlank(keyword)) {
             List<Shop> semanticCandidates = loadSemanticCandidates(keyword, typeId, city, locationHint, x, y, targetSize);
             log.info("recommendation_recall semantic={}", semanticCandidates.size());
             mergeCandidates(merged, semanticCandidates);
-        }
-        if (merged.size() < targetSize && useLocation) {
-            List<Shop> coordinateCandidates = loadCoordinateDbCandidates(typeId, maxBudget, x, y, targetSize);
-            log.info("recommendation_recall coordinate_db={}", coordinateCandidates.size());
-            mergeCandidates(merged, coordinateCandidates);
         }
         if (merged.size() < (useLocation ? MIN_LOCATION_CANDIDATES : targetSize)) {
             List<Shop> primaryDbCandidates = loadPrimaryDbCandidates(keyword, typeId, maxBudget, city, locationHint, targetSize);
@@ -406,7 +408,7 @@ public class ShopRecommendationServiceImpl implements IShopRecommendationService
      * 用户明确说“附近”且我们已经拿到坐标时，先做一层硬距离过滤。
      * 这样可以避免全国候选因为评分高而挤进 shortlist，最后又在结果阶段被整体清空。
      */
-    private List<Shop> applyLocationHardFilter(List<Shop> candidates, Double x, Double y) {
+    private List<Shop> prioritizeCandidatesByDistance(List<Shop> candidates, Double x, Double y, double radiusMeters) {
         if (candidates == null || candidates.isEmpty() || x == null || y == null) {
             return candidates == null ? Collections.emptyList() : candidates;
         }
@@ -420,7 +422,7 @@ public class ShopRecommendationServiceImpl implements IShopRecommendationService
                 distance = distanceMeters(x, y, shop.getX(), shop.getY());
                 shop.setDistance(distance);
             }
-            if (distance != null && distance <= LOCATION_HARD_FILTER_METERS) {
+            if (distance != null && distance <= radiusMeters) {
                 filtered.add(shop);
             }
         }

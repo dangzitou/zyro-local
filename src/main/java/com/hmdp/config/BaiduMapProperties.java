@@ -21,6 +21,11 @@ public class BaiduMapProperties {
     private String geocodingUrl = "https://api.map.baidu.com/geocoding/v3/";
 
     /**
+     * Reverse geocoding endpoint.
+     */
+    private String reverseGeocodingUrl = "https://api.map.baidu.com/reverse_geocoding/v3/";
+
+    /**
      * Place suggestion endpoint.
      */
     private String suggestionUrl = "https://api.map.baidu.com/place/v2/suggestion";
